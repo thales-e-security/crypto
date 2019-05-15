@@ -27,6 +27,9 @@ const (
 	KeyFlagSign
 	KeyFlagEncryptCommunications
 	KeyFlagEncryptStorage
+
+	TrustLevelPartialTrust uint8 = 60
+	TrustLevelCompleteTrust uint8 = 120
 )
 
 // Signature represents a signature. See RFC 4880, section 5.2.
@@ -66,6 +69,11 @@ type Signature struct {
 	// See RFC 4880, section 5.2.3.23 for details.
 	RevocationReason     *uint8
 	RevocationReasonText string
+
+	// TrustSignLevel is the depth of the trust signature, i.e. 0 is normal signature, 1 is trusted introducer
+	// TrustSignDegree is the amount of trust to place in the key, where 60 is partial trust and 120 is complete trust
+	TrustSignLevel  *uint8
+	TrustSignDegree *uint8
 
 	// MDC is set if this signature has a feature packet that indicates
 	// support for MDC subpackets.
@@ -195,6 +203,7 @@ type signatureSubpacketType uint8
 const (
 	creationTimeSubpacket        signatureSubpacketType = 2
 	signatureExpirationSubpacket signatureSubpacketType = 3
+	trustSignatureSubpacket		 signatureSubpacketType = 5
 	keyExpirationSubpacket       signatureSubpacketType = 9
 	prefSymmetricAlgosSubpacket  signatureSubpacketType = 11
 	issuerSubpacket              signatureSubpacketType = 16
@@ -271,6 +280,19 @@ func parseSignatureSubpacket(sig *Signature, subpacket []byte, isHashed bool) (r
 		}
 		sig.SigLifetimeSecs = new(uint32)
 		*sig.SigLifetimeSecs = binary.BigEndian.Uint32(subpacket)
+	case trustSignatureSubpacket:
+		// Signature expiration time, section 5.2.3.10
+		if !isHashed {
+			return
+		}
+		if len(subpacket) != 2 {
+			err = errors.StructuralError("trust signature subpacket with bad length")
+			return
+		}
+		sig.TrustSignLevel = new(uint8)
+		*sig.TrustSignLevel = subpacket[0]
+		sig.TrustSignDegree = new(uint8)
+		*sig.TrustSignDegree = subpacket[1]
 	case keyExpirationSubpacket:
 		// Key expiration time, section 5.2.3.6
 		if !isHashed {
@@ -682,6 +704,11 @@ func (sig *Signature) buildSubpackets() (subpackets []outputSubpacket) {
 		sigLifetime := make([]byte, 4)
 		binary.BigEndian.PutUint32(sigLifetime, *sig.SigLifetimeSecs)
 		subpackets = append(subpackets, outputSubpacket{true, signatureExpirationSubpacket, true, sigLifetime})
+	}
+
+	if sig.TrustSignLevel != nil && *sig.TrustSignLevel != 0 {
+		trustSig := []byte{*sig.TrustSignLevel, *sig.TrustSignDegree}
+		subpackets = append(subpackets, outputSubpacket{true, trustSignatureSubpacket, false, trustSig})
 	}
 
 	// Key flags may only appear in self-signatures or certification signatures.
