@@ -28,8 +28,8 @@ const (
 	KeyFlagEncryptCommunications
 	KeyFlagEncryptStorage
 
-	TrustLevelPartialTrust uint8 = 60
-	TrustLevelCompleteTrust uint8 = 120
+	TrustDegreePartial  uint8 = 60
+	TrustDegreeComplete uint8 = 120
 )
 
 // Signature represents a signature. See RFC 4880, section 5.2.
@@ -203,7 +203,7 @@ type signatureSubpacketType uint8
 const (
 	creationTimeSubpacket        signatureSubpacketType = 2
 	signatureExpirationSubpacket signatureSubpacketType = 3
-	trustSignatureSubpacket		 signatureSubpacketType = 5
+	trustSignatureSubpacket      signatureSubpacketType = 5
 	keyExpirationSubpacket       signatureSubpacketType = 9
 	prefSymmetricAlgosSubpacket  signatureSubpacketType = 11
 	issuerSubpacket              signatureSubpacketType = 16
