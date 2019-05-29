@@ -616,12 +616,35 @@ func (sig *Signature) SignKey(pub *PublicKey, priv *PrivateKey, config *Config) 
 	return sig.Sign(h, priv, config)
 }
 
+// CrossSignKey computes a signature from subpriv, asserting that the pub subkey belongs to priv.
+// See https://www.gnupg.org/faq/subkey-cross-certify.html.
+// On success, the signature is stored in sig. Call Serialize to write it out.
+// If config is nil, sensible defaults will be used.
+func (sig *Signature) CrossSignKey(pub *PublicKey, priv, subpriv *PrivateKey, config *Config) error {
+	h, err := keySignatureHash(&priv.PublicKey, pub, sig.Hash)
+	if err != nil {
+		return err
+	}
+	return sig.Sign(h, subpriv, config)
+}
+
 // Serialize marshals sig to w. Sign, SignUserId or SignKey must have been
 // called first.
 func (sig *Signature) Serialize(w io.Writer) (err error) {
 	if len(sig.outSubpackets) == 0 {
 		sig.outSubpackets = sig.rawSubpackets
 	}
+
+	if sig.EmbeddedSignature != nil {
+		var embedded bytes.Buffer
+		err = sig.EmbeddedSignature.serializeWithoutHeaders(&embedded)
+		if err != nil {
+			return
+		}
+
+		sig.outSubpackets = append(sig.outSubpackets, outputSubpacket{false, embeddedSignatureSubpacket, true, embedded.Bytes()})
+	}
+
 	if sig.RSASignature.bytes == nil && sig.DSASigR.bytes == nil && sig.ECDSASigR.bytes == nil {
 		return errors.InvalidArgumentError("Signature: need to call Sign, SignUserId or SignKey before Serialize")
 	}
@@ -644,15 +667,27 @@ func (sig *Signature) Serialize(w io.Writer) (err error) {
 	length := len(sig.HashSuffix) - 6 /* trailer not included */ +
 		2 /* length of unhashed subpackets */ + unhashedSubpacketsLen +
 		2 /* hash tag */ + sigLength
+
 	err = serializeHeader(w, packetTypeSignature, length)
 	if err != nil {
 		return
 	}
 
+	err = sig.serializeWithoutHeaders(w)
+	if err != nil {
+		return
+	}
+
+	return nil
+}
+
+func (sig *Signature) serializeWithoutHeaders(w io.Writer) (err error) {
 	_, err = w.Write(sig.HashSuffix[:len(sig.HashSuffix)-6])
 	if err != nil {
 		return
 	}
+
+	unhashedSubpacketsLen := subpacketsLength(sig.outSubpackets, false)
 
 	unhashedSubpackets := make([]byte, 2+unhashedSubpacketsLen)
 	unhashedSubpackets[0] = byte(unhashedSubpacketsLen >> 8)
