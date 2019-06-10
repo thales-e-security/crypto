@@ -642,7 +642,19 @@ func (sig *Signature) Serialize(w io.Writer) (err error) {
 			return
 		}
 
-		sig.outSubpackets = append(sig.outSubpackets, outputSubpacket{false, embeddedSignatureSubpacket, true, embedded.Bytes()})
+		var found = false
+		for i, _ := range sig.outSubpackets {
+			if sig.outSubpackets[i].subpacketType == embeddedSignatureSubpacket {
+				// If an embedded signature subpacket already exists, update its contents
+				sig.outSubpackets[i] = outputSubpacket{false, embeddedSignatureSubpacket, true, embedded.Bytes()}
+				found = true
+			}
+		}
+
+		if !found {
+			// If no existing embedded signature subpacket was found, create one
+			sig.outSubpackets = append(sig.outSubpackets, outputSubpacket{false, embeddedSignatureSubpacket, true, embedded.Bytes()})
+		}
 	}
 
 	if sig.RSASignature.bytes == nil && sig.DSASigR.bytes == nil && sig.ECDSASigR.bytes == nil {
